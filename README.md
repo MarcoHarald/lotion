@@ -5,9 +5,9 @@
 
 ## 0. PREAMBLE — READ THIS FIRST
 
-This document is a complete build brief for an autonomous coding agent. It contains everything needed to build a working prototype of a geopolitical consequence mapping tool — purpose, architecture, UX behaviour, data sources, AI integration strategy, known failure modes, and workarounds. Read the entire document before writing a single line of code.
+This document is a complete build brief for an autonomous coding agent. It contains everything needed to build a working prototype of a geopolitical consequence mapping tool — purpose, architecture, UX behaviour, AI integration strategy, data persistence, known failure modes, and workarounds. Read the entire document before writing a single line of code.
 
-This tool is **not** a news aggregator. It is **not** a dashboard. It is a structured reasoning interface that helps a knowledgeable analyst rapidly understand and explore the downstream consequences of a geopolitical trigger event — with particular focus on the Gulf region, energy markets, and global supply chain interdependencies.
+This tool is **not** a news aggregator. It is **not** a dashboard. It is a structured reasoning interface where an AI agent swarm produces a first-pass consequence map of a geopolitical trigger event, and a knowledgeable analyst interrogates, challenges, and steers that map through iterative feedback. The consequence graph is a *draft* — the human-in-the-loop feedback cycle is the core product.
 
 ---
 
@@ -15,41 +15,45 @@ This tool is **not** a news aggregator. It is **not** a dashboard. It is a struc
 
 ### The Problem Being Solved
 
-When a significant geopolitical event occurs — a Strait of Hormuz disruption, a Gulf state blockade, a sudden shift in LNG export routing — the immediate first-order effects (energy price spike, shipping disruption) are obvious and quickly priced in by markets. The *real* analytical value lies in second and third-order effects: food insecurity in import-dependent nations, sovereign debt pressure, political instability, downstream manufacturing disruption, and the feedback loops between these domains.
+When a significant geopolitical event occurs — a Strait of Hormuz disruption, a Gulf state blockade, a sudden shift in LNG export routing — the immediate first-order effects are obvious and quickly priced in. The real analytical value lies in second and third-order effects: food insecurity in import-dependent nations, sovereign debt pressure, political instability, downstream manufacturing disruption, and the feedback loops between these domains.
 
-Currently, analysts work through these consequence chains manually, using a combination of prose reports (Stratfor, Oxford Analytica), personal knowledge, and ad-hoc searches. This process is slow, non-visual, and makes assumptions implicit rather than explicit. By the time a thorough consequence analysis is complete, the window for actionable insight has often closed.
+Analysts currently work through these consequence chains manually, using prose reports, personal knowledge, and ad-hoc searches. This is slow, non-visual, and makes assumptions implicit rather than explicit. By the time a thorough consequence analysis is complete, the window for actionable insight has often closed.
 
 ### The Mission
 
-Build a tool that allows an analyst to input a geopolitical trigger event in plain language and, within under a minute, have a structured, interactive consequence graph populated across multiple domains — with timeline estimates, confidence indicators, historical analogues, and the ability to drill into, modify, and stress-test any node in the graph.
+Build a tool that allows an analyst to input a geopolitical trigger event in plain language and, within under a minute, have a structured interactive consequence graph populated across multiple domains — with streaming domain-by-domain results, cited OSINT sources, timeline estimates, confidence indicators, and historical analogues. The analyst can then push back on any node, inject external context, tweak the scenario, and re-trigger the agent swarm selectively — without waiting for a full re-run when only part of the graph needs updating.
 
 ### The Target User
 
-**Not** a general public user. **Not** someone who needs geopolitics explained. The user is an analyst, journalist, researcher, or informed observer who already understands the domain. They know what the Strait of Hormuz is, they understand LNG spot markets, they're familiar with concepts like sovereign debt contagion. The tool should respect this: no condescending explanations, no oversimplification. The value is speed of structured reasoning, not education.
+**Not** a general public user. The user is a solo analyst, researcher, or informed observer who already understands the domain deeply. They know what the Strait of Hormuz is, they understand LNG spot markets, they're familiar with sovereign debt contagion. The tool respects this: no condescending explanations, no oversimplification. The value is speed of structured reasoning and a reasoning partner that can be interrogated and corrected.
 
 ---
 
 ## 2. CORE CONCEPTS AND TERMINOLOGY
 
 ### Trigger Event
-A user-described geopolitical event that initiates the analysis. Examples:
-- "Iran begins mining campaign in Strait of Hormuz"
+A plain-language description of a geopolitical event that initiates the analysis. Examples:
+- "Iran begins mining campaign in Strait of Hormuz in response to sanctions escalation"
 - "Houthi attacks force Maersk to suspend Red Sea transits indefinitely"
 - "Saudi Arabia signals willingness to accept non-USD payment for oil exports"
 - "Qatar placed under blockade by GCC neighbours"
 
 ### Consequence Node
-A discrete downstream effect of the trigger or of another consequence. Each node has:
-- **Domain** (see below)
-- **Description** of the effect
-- **Confidence level** (High / Medium / Speculative)
-- **Timeline** (Immediate: 0–72hrs / Short: 1–4 weeks / Medium: 1–6 months / Long: 6months+)
-- **Mechanism** — a brief explanation of *why* this effect follows from its parent
+A discrete downstream effect of the trigger or of another consequence. Each node carries:
+- **Domain** — which analytical domain this effect belongs to
+- **Title** — 3–7 word summary
+- **Description** — 1–2 sentence effect description
+- **Mechanism** — causal explanation of why this follows from its parent
+- **Confidence** — High / Medium / Speculative
+- **Timeline** — Immediate (0–72hr) / Short (1–4wk) / Medium (1–6mo) / Long (6mo+)
 - **Assumptions** — what must be true for this link to hold
-- **Historical precedent** — if applicable, a named prior event
+- **Quantitative estimate** — where known ("15–25% spot LNG price spike")
+- **Monitoring indicators** — real-world signals that would confirm this consequence is materialising
+- **Historical precedent** — named prior event if applicable
+- **Sources** — cited X/Telegram/web sources used by the agent to support this node
 
 ### Domains
-The tool organises consequences across six domains. Each has a distinct visual identity:
+Six analytical domains, each with a distinct visual identity:
 
 | Domain | Colour | Scope |
 |---|---|---|
@@ -61,385 +65,466 @@ The tool organises consequences across six domains. Each has a distinct visual i
 | **Supply Chain** | Purple | Industrial inputs; semiconductor dependencies; manufacturing disruption |
 
 ### Consequence Graph
-A directed acyclic graph (in practice, sometimes with feedback loops) where:
-- The trigger event is the root node
-- Each domain contains child nodes connected by causal edges
-- Nodes can have cross-domain connections (e.g. an Energy node triggering a Finance node)
-- Depth typically goes 2–3 levels before confidence degrades too far to be useful
+A directed graph where the trigger event is the root node and consequence nodes fan out by domain, with cross-domain edges representing interactions between domains. Depth runs 2–3 levels before confidence degrades too far to be analytically useful.
+
+### Source Cards
+When an Agno domain agent uses an X/Twitter account or Telegram channel to enrich its reasoning, the source must be surfaced as a citable card — not silently absorbed. A source card contains: platform, handle/channel, brief content snippet, link, and which consequence node(s) it informed. The analyst can follow the source independently. These are *leads*, not just data.
 
 ### Historical Analogue
-A real prior event that is structurally similar to the current scenario, used to ground-truth the AI's consequence reasoning. Key analogues in the library:
-- **1973 Arab Oil Embargo** — supply shock, strategic reserve creation, demand destruction
-- **1990 Gulf War / Kuwait Invasion** — rapid oil price spike, military coalition formation
-- **2003 Iraq War** — price uncertainty without supply disruption, geopolitical risk premium
-- **2012 Iran Sanctions / Hormuz Threats** — threatened closure scenario, insurance rate spike
-- **2021–2022 Houthi/Red Sea Campaign** — active chokepoint harassment, shipping rerouting economics
-- **2017 Qatar Blockade** — GCC political rupture, LNG rerouting, food import disruption
-- **2021 Suez Canal Blockage (Ever Given)** — accidental chokepoint closure, cascading delays
-- **2022 Russia-Ukraine / Energy Decoupling** — sustained supply shock, political realignment, food crisis (fertiliser/grain)
+A real prior event structurally similar to the current scenario, used to ground-truth agent reasoning. Core analogue library (stored in Supabase, not hardcoded):
+- 1973 Arab Oil Embargo
+- 1990 Gulf War / Kuwait invasion
+- 2003 Iraq War
+- 2012 Iran sanctions / Hormuz threats
+- 2017 Qatar blockade
+- 2021 Suez Canal blockage (Ever Given)
+- 2021–2022 Houthi / Red Sea campaign
+- 2022 Russia-Ukraine energy decoupling
+
+### Analyst Feedback
+Structured input from the analyst after reviewing a generated graph. Four distinct feedback modes, each triggering a different re-run pattern:
+
+| Mode | Description | Re-run scope |
+|---|---|---|
+| **Disagree** | "This won't happen because X" — analyst counter-reasoning injected as constraint | Affected domain agent(s) + re-synthesise |
+| **Amplify** | "Go deeper on this, it's more important than weighted" | That domain agent only + re-synthesise |
+| **Scenario tweak** | Changes to the trigger itself | Full swarm re-run (Perplexity cache preserved) |
+| **External inject** | Analyst pastes in content — a Telegram post, a source the tool doesn't have | Inject into relevant agent(s) + re-synthesise |
+
+The analyst can batch multiple feedback items across nodes before triggering a re-run. A single "Submit feedback" action commits all pending items at once, and the orchestrator determines the minimal re-run scope from the combined set.
 
 ---
 
-## 3. ARCHITECTURE OVERVIEW
+## 3. SYSTEM ARCHITECTURE
 
-The tool is a single-page React application. There is no backend. All data fetching and AI calls happen client-side via API calls made from within the artifact/app.
-
-### Three-Panel Layout
+### High-Level Flow
 
 ```
-┌─────────────────────────────────────────────────────────────────────────┐
-│  HEADER: Tool name, scenario title, export button                        │
-├──────────────┬─────────────────────────────────────┬────────────────────┤
-│              │                                     │                    │
-│  LEFT PANEL  │        CENTRE PANEL                 │   RIGHT PANEL      │
-│  ~280px      │        Consequence Graph            │   ~320px           │
-│              │        (D3 force-directed)          │                    │
-│  Trigger     │                                     │  Node Detail       │
-│  Input       │                                     │  Inspector         │
-│              │                                     │                    │
-│  Timeline    │                                     │  Historical        │
-│  Slider      │                                     │  Analogues         │
-│              │                                     │                    │
-│  Domain      │                                     │  Stress Test       │
-│  Filters     │                                     │  Panel             │
-│              │                                     │                    │
-│  Scenario    │                                     │                    │
-│  Library     │                                     │                    │
-│              │                                     │                    │
-└──────────────┴─────────────────────────────────────┴────────────────────┘
+[1] TRIGGER INPUT
+        ↓
+[2] PERPLEXITY ENRICHMENT
+    Pulls current news/context for the trigger event
+    Output: enriched context object, cached for the session
+    Refreshable manually by analyst; never auto-re-run on feedback loops
+        ↓
+[3] AGNO DOMAIN SWARM (parallel execution)
+    ├── Energy agent        ← Perplexity context + X/Telegram tools
+    ├── Food/Ag agent       ← Perplexity context + X/Telegram tools
+    ├── Finance agent       ← Perplexity context
+    ├── Political agent     ← Perplexity context + X/Telegram tools (heavy OSINT)
+    ├── Military agent      ← Perplexity context + X/Telegram tools (heavy OSINT)
+    └── Supply Chain agent  ← Perplexity context
+    Each agent returns: consequence nodes + cross-domain edge suggestions + source cards
+        ↓
+    STREAMING RENDER — domain graphs appear in UI as each agent completes
+    Analyst can begin reading immediately while remaining agents run
+        ↓
+[4] SYNTHESISER AGENT
+    Runs once all domain agents complete
+    ├── Internal consistency check (timeline/confidence coherence)
+    ├── Cross-domain edge reconciliation (resolve contradictions between agents)
+    └── Source attribution pass (flag unsourced influential claims)
+    Cross-domain edges and Analogues panel appear in UI after synthesiser completes
+        ↓
+[5] FULL GRAPH RENDERED
+    Consequence graph + source cards + historical analogues + feedback tools
+        ↓
+[6] ANALYST FEEDBACK
+    Analyst reviews, annotates, disagrees, amplifies, tweaks, or injects
+    Multiple feedback items batched in the Feedback Queue before submission
+        ↓
+[7] SELECTIVE RE-TRIGGER
+    Orchestrator determines minimal re-run scope from feedback type(s):
+    ├── Disagree / Amplify / External inject → re-run affected domain agent(s) only
+    ├── Scenario tweak → full swarm re-run, Perplexity cache preserved
+    └── Mixed batch → union of affected domains
+    → Re-synthesise → re-render affected subgraph only
+    → Feedback items marked Applied with timestamp in Supabase
 ```
 
-### Technology Stack
-- **React** with hooks for state management
-- **D3.js** for the force-directed consequence graph
-- **Anthropic Claude API** (`claude-sonnet-4-20250514`) for consequence generation and reasoning
-- **Tailwind CSS** for styling — dark theme, information-dense, professional
-- All in a **single JSX file**
+### Degradation Hierarchy
+Never show a blank screen when partial results are available:
+
+- **RapidAPI fails** → proceed without OSINT enrichment; note absence in source cards panel
+- **Perplexity fails** → proceed with Claude/Agno knowledge only; display "no live context" warning prominently
+- **One domain agent fails** → render all other domains; show error state for failed domain with individual retry button
+- **Synthesiser fails** → render raw domain outputs with visible "coherence unverified" warning; analyst can still interact with the graph
+- **Supabase write fails** → continue session normally; retry persistence in background; warn analyst that save failed
 
 ---
 
-## 4. DETAILED COMPONENT SPECIFICATIONS
+## 4. TECHNOLOGY STACK
 
-### 4.1 Left Panel — Control Surface
+| Layer | Technology | Role |
+|---|---|---|
+| Frontend | React + D3.js + Tailwind CSS | Single-page app, graph rendering, UI |
+| Agent orchestration | Agno | Domain swarm coordination, parallel execution, selective re-triggering |
+| Primary reasoning | Anthropic Claude API (`claude-sonnet-4-20250514`) | All domain agents + synthesiser |
+| Live context enrichment | Perplexity API | Pre-swarm current events context, session-cached |
+| OSINT enrichment | RapidAPI (X/Twitter, Telegram) | Domain agent tools, optional enrichment layer |
+| Persistence | Supabase (Postgres) | Scenarios, nodes, edges, feedback, analogues, source cards |
+| Secrets management | Supabase Vault | All API keys — never in code, never in committed environment files |
 
-#### Trigger Event Input
-- Large textarea, prominent, at top of left panel
-- Placeholder text: *"Describe a geopolitical trigger event... e.g. 'Iran begins mining Strait of Hormuz in response to US sanctions escalation'"*
-- Below it: a **Generate Consequences** button — primary CTA, full width
-- While generating: show a pulsing status line with stage descriptions ("Analysing trigger domains... Mapping energy dependencies... Identifying political vulnerabilities... Cross-referencing historical analogues...")
-- Loading should feel intelligent, not just a spinner
-
-#### Timeline Slider
-- A horizontal slider: **Immediate (0–72hr)** → **Short (1–4wk)** → **Medium (1–6mo)** → **Long (6mo+)**
-- Moving the slider filters which nodes are visible in the graph — only nodes with timeline at or before the selected horizon are shown
-- This is one of the most powerful UX interactions: watching the graph *grow* as you slide the timeline forward creates genuine insight
-- Default position: Short (1–4 weeks)
-
-#### Domain Filter Toggles
-- Six toggle buttons, one per domain, each in the domain's colour
-- Toggling a domain hides/shows all nodes of that domain
-- All enabled by default
-
-#### Scenario Library
-- A collapsed/expandable section below the filters
-- Contains 5–8 pre-seeded scenarios the analyst can load instantly without running the AI (uses cached/hardcoded consequence data)
-- Scenarios should cover the most likely Gulf/MENA situations:
-  - "Strait of Hormuz — partial disruption (mining/harassment)"
-  - "Strait of Hormuz — full closure (military action)"
-  - "Red Sea — sustained Houthi campaign escalation"
-  - "Qatar — renewed GCC blockade"
-  - "Saudi Arabia — internal political instability / succession crisis"
-  - "Iran — nuclear threshold crossing"
-  - "UAE — targeted infrastructure attack"
-- Clicking a scenario loads it instantly into the graph, bypassing API call
-- Each pre-seeded scenario must be fully populated with realistic, expert-level consequence data hardcoded in the app — not placeholders
-
-### 4.2 Centre Panel — Consequence Graph
-
-This is the centrepiece of the tool. It must be visually compelling and analytically useful simultaneously.
-
-#### Graph Rendering (D3 Force-Directed)
-- The trigger event is rendered as a central root node — larger, white/light, distinct
-- Consequence nodes are arranged around it by domain, with some clustering by domain but allowing cross-domain edges to create natural cross-cluster connections
-- Node size scales with **confidence level** — High confidence nodes are larger
-- Node opacity scales with **timeline** — Immediate effects are fully opaque, Long effects are more transparent (but still readable)
-- Edge thickness scales with strength of causal link
-- Edges are directed (arrows) — causality has direction
-- Cross-domain edges use a dashed line style to distinguish them from within-domain edges
-- Domain colour is the primary visual encoding — the graph should be immediately readable as a colour-coded consequence map
-
-#### Node Interactions
-- **Hover**: Show a tooltip with node description and mechanism (the "why")
-- **Click**: Populate the Right Panel Node Inspector with full details
-- **Right-click or long-press**: Context menu with options:
-  - "Expand this node further" (triggers API call to generate deeper consequences from this specific node)
-  - "Stress test — what if this effect is worse than expected"
-  - "Find historical precedent for this specific effect"
-  - "Mark as unlikely / remove from analysis"
-
-#### Graph Controls
-- Zoom in/out (mouse wheel)
-- Pan (drag on background)
-- "Reset layout" button to re-centre
-- "Export as PNG" button
-
-#### Visual Confidence Encoding
-Use a subtle visual treatment to distinguish confidence levels — this is important so analysts don't treat speculative nodes with the same weight as high-confidence ones:
-- **High confidence**: Solid border, full opacity
-- **Medium confidence**: Dashed border, 85% opacity  
-- **Speculative**: Dotted border, 65% opacity, small ⚠ icon
-
-### 4.3 Right Panel — Inspector and Context
-
-#### Node Detail Inspector
-When no node is selected, show a brief instruction. When a node is selected:
-- Node title (large)
-- Domain badge in domain colour
-- Timeline badge
-- Confidence badge
-- **Mechanism**: Full explanation of the causal chain leading to this effect
-- **Key assumptions**: Bulleted list of what must hold for this consequence to materialise
-- **Data basis**: What structural fact underlies this (e.g. "68% of Pakistan's edible oil imports transit Strait of Hormuz")
-- **Uncertainty range**: What would make this effect stronger / weaker than the median estimate
-- **Monitoring indicators**: What real-world signals would confirm this consequence is beginning to materialise (this is extremely high value for analysts — it tells them what to watch)
-
-#### Historical Analogues Panel
-Below the Node Inspector, always visible:
-- Automatically populated when a scenario is loaded/generated
-- Shows 2–4 most relevant historical analogues
-- Each analogue entry shows:
-  - Event name and date
-  - One-line structural similarity explanation
-  - **What happened vs what models predicted** — a brief "ground truth" note
-  - A "Compare scenarios" button that overlays the historical analogue's consequence pattern on the current graph in a muted colour — allowing the analyst to visually compare what happened then vs what the model predicts now
-
-#### Stress Test Panel
-Accessible via a "Stress Test" tab in the right panel:
-- Analyst can select any node and define a "worse than expected" variant
-- Tool re-runs consequence generation from that node with the amplified assumption
-- Changed nodes highlight in the graph with a red outline
-- Useful for war-gaming: "what if the Hormuz closure lasts 6 months instead of 3 weeks?"
+### API Key Management — Critical
+All five external service credentials (Anthropic, Agno, Perplexity, RapidAPI, Supabase) must be stored in **Supabase Vault**. No API keys are to be hardcoded anywhere in the codebase. No API keys in `.env` files committed to version control. The application retrieves secrets from Supabase Vault at runtime. Document the required vault key names clearly in a `SETUP.md` so a developer can populate them on first deploy without reading source code.
 
 ---
 
-## 5. AI INTEGRATION — CLAUDE API
+## 5. DATABASE SCHEMA
 
-### The Core Prompt Strategy
+The schema is designed for a solo analyst today but structured for multi-user from the start. Auth UI is not built in V1 — `user_id` fields are present and indexed but authentication is not enforced yet.
 
-The quality of the consequence graph is entirely dependent on prompt design. This is the most important engineering decision in the tool. The AI call must return **structured data**, not prose.
-
-#### Primary Consequence Generation Prompt
-
-The system prompt must instruct Claude to:
-1. Act as an expert geopolitical analyst with deep knowledge of energy markets, supply chains, and political economy
-2. Return **only** a valid JSON object — no preamble, no explanation, no markdown fences
-3. Populate a consequence graph with nodes at 2–3 levels of depth
-4. For each node, populate all required fields: id, parentId, domain, title, description, mechanism, confidence, timeline, assumptions, monitoringIndicators, historicalPrecedent
-5. Be specific and quantitative where possible ("a 15–25% spike in spot LNG prices" not "energy prices rise")
-6. Cross-domain edges must be explicitly listed as separate edge objects
-
-The user message should include:
-- The trigger event description
-- Current date/context
-- An explicit instruction to weight consequences toward the Gulf/MENA regional context unless the trigger clearly implies otherwise
-- A request to include 3–5 historical analogues relevant to this scenario
-
-#### Expected JSON Schema
-
+### `users`
+```sql
+id              uuid primary key
+email           text
+created_at      timestamptz
 ```
+
+### `scenarios`
+```sql
+id                  uuid primary key
+user_id             uuid references users(id)
+title               text
+trigger_text        text            -- analyst's original input verbatim
+trigger_summary     text            -- synthesiser's cleaned version
+status              text check (status in ('generating','complete','error','archived'))
+perplexity_cache    jsonb           -- cached enrichment context, timestamped
+perplexity_cached_at timestamptz
+created_at          timestamptz
+updated_at          timestamptz
+```
+
+### `nodes`
+```sql
+id                      uuid primary key
+scenario_id             uuid references scenarios(id)
+parent_id               uuid references nodes(id)   -- null for root trigger node
+domain                  text check (domain in ('root','energy','food','finance','political','military','supply_chain'))
+title                   text
+description             text
+mechanism               text
+confidence              text check (confidence in ('high','medium','speculative'))
+timeline                text check (timeline in ('immediate','short','medium','long'))
+assumptions             text[]
+monitoring_indicators   text[]
+quantitative_estimate   text
+historical_precedent    text
+agent_generated_by      text        -- which domain agent created this node
+is_analyst_modified     boolean default false
+created_at              timestamptz
+updated_at              timestamptz
+```
+
+### `edges`
+```sql
+id              uuid primary key
+scenario_id     uuid references scenarios(id)
+source_node_id  uuid references nodes(id)
+target_node_id  uuid references nodes(id)
+mechanism       text
+is_cross_domain boolean
+confidence      text check (confidence in ('high','medium','speculative'))
+created_at      timestamptz
+```
+
+### `source_cards`
+```sql
+id              uuid primary key
+scenario_id     uuid references scenarios(id)
+node_id         uuid references nodes(id)
+platform        text check (platform in ('twitter','telegram','web','perplexity'))
+handle          text            -- @handle or channel name
+snippet         text
+url             text
+retrieved_at    timestamptz
+created_at      timestamptz
+```
+
+### `analyst_feedback`
+```sql
+id                      uuid primary key
+scenario_id             uuid references scenarios(id)
+node_id                 uuid references nodes(id)   -- null = scenario-level feedback
+user_id                 uuid references users(id)
+feedback_type           text check (feedback_type in ('disagree','amplify','scenario_tweak','external_inject'))
+content                 text        -- analyst's written feedback or injected content
+domain_tag              text        -- inferred from node's domain, used for re-run scoping
+status                  text check (status in ('pending','applied','dismissed'))
+re_run_triggered_at     timestamptz
+created_at              timestamptz
+```
+
+### `historical_analogues`
+```sql
+id                      uuid primary key
+event_name              text
+year                    integer
+region                  text[]
+domains                 text[]      -- which domains this analogue is relevant to
+structural_similarity   text
+ground_truth            text        -- what actually happened
+relevant_lesson         text
+created_at              timestamptz
+```
+*Seeded on first deploy. Never hardcoded in frontend. New analogues added via database without code changes.*
+
+### `scenario_analogues`
+```sql
+id                      uuid primary key
+scenario_id             uuid references scenarios(id)
+analogue_id             uuid references historical_analogues(id)
+relevance_explanation   text        -- why this analogue applies to this specific scenario
+created_at              timestamptz
+```
+
+---
+
+## 6. AGNO AGENT SPECIFICATIONS
+
+### Orchestrator Agent
+Receives the trigger event and analyst feedback. Dispatches domain agents in parallel, passing Perplexity context to each. Collects outputs and passes to synthesiser. On feedback re-trigger, determines minimal re-run scope from feedback types and domain tags, then dispatches only the necessary agents with feedback content injected as constraints.
+
+### Domain Agents (six, parallel)
+Each domain agent receives:
+- Trigger event text
+- Perplexity enrichment context object
+- Domain specialisation and scope definition
+- Any analyst feedback relevant to its domain (on re-runs), as explicit constraints
+- Existing nodes for its domain (on re-runs) — modify rather than regenerate from scratch; return a `change_type` field per node: `modified | new | unchanged | removed`
+
+OSINT tool use via RapidAPI is most critical for Political and Military agents. Energy and Food agents use it selectively. Finance and Supply Chain agents rely primarily on Perplexity context and Claude reasoning.
+
+When X/Telegram sources are used, agents must return source cards — handle, snippet, URL, and which node(s) the source informed. Sources are leads for the analyst, not anonymous data.
+
+### Synthesiser Agent
+Runs once all domain agents complete. Performs three tasks in order — it does not generate new consequence nodes:
+
+1. **Consistency check**: Timeline and confidence coherence. A Long-timeline node cannot be the parent of a Short-timeline node. Speculative nodes should not be parents of High-confidence nodes without explicit flagging. Correct or flag.
+
+2. **Cross-domain reconciliation**: Merge duplicate effects touched by multiple domain agents. Resolve contradictions. Validate cross-domain edge suggestions. Build the final edge list.
+
+3. **Source attribution**: Attach cited sources to the nodes they informed. Flag Medium/High confidence nodes with no source basis as "agent reasoning, uncited."
+
+The coherence bar is internal logic, not plausibility. Wacky-but-coherent stays. Incoherent gets flagged.
+
+---
+
+## 7. AI PROMPT DESIGN
+
+### Domain Agent System Prompt Requirements
+Each domain agent's system prompt must specify:
+- Expert persona for that domain
+- Return **only valid JSON** — no preamble, no markdown fences, no explanation text
+- Exact JSON schema (see below)
+- Be specific and quantitative where possible
+- Cite sources explicitly when OSINT tools are used — handle, snippet, URL
+- Weight consequences toward Gulf/MENA context unless trigger implies otherwise
+- On re-runs: treat existing nodes as starting point, return only changed nodes with `change_type`
+
+### Synthesiser System Prompt Requirements
+- Role is consistency checker and reconciler, not analyst
+- Return structured reconciliation output: resolved contradictions, merged nodes, validated edges, flagged unsourced claims
+- Coherence is the bar, not plausibility
+
+### Domain Agent JSON Output Schema
+```json
 {
-  "scenario": {
-    "title": string,
-    "triggerSummary": string,
-    "generatedAt": ISO timestamp,
-    "analystNotes": string  // AI's top 3 things the analyst should watch
-  },
+  "domain": "string",
   "nodes": [
     {
-      "id": string,
-      "parentId": string | null,  // null for root
-      "domain": "energy" | "food" | "finance" | "political" | "military" | "supply_chain",
-      "title": string,  // short, 3-7 words
-      "description": string,  // 1-2 sentences
-      "mechanism": string,  // the causal explanation, 2-3 sentences
-      "confidence": "high" | "medium" | "speculative",
-      "timeline": "immediate" | "short" | "medium" | "long",
-      "assumptions": string[],  // what must be true
-      "monitoringIndicators": string[],  // what to watch for
-      "historicalPrecedent": string | null,  // named event if applicable
-      "quantitativeEstimate": string | null  // e.g. "15-25% price increase"
+      "id": "string",
+      "parent_id": "string | null",
+      "title": "string",
+      "description": "string",
+      "mechanism": "string",
+      "confidence": "high | medium | speculative",
+      "timeline": "immediate | short | medium | long",
+      "assumptions": ["string"],
+      "monitoring_indicators": ["string"],
+      "quantitative_estimate": "string | null",
+      "historical_precedent": "string | null",
+      "change_type": "new | modified | unchanged | removed"
     }
   ],
-  "crossDomainEdges": [
+  "cross_domain_edge_suggestions": [
     {
-      "sourceId": string,
-      "targetId": string,
-      "mechanism": string  // why domain A node affects domain B node
+      "source_node_id": "string",
+      "target_domain": "string",
+      "mechanism": "string",
+      "confidence": "high | medium | speculative"
     }
   ],
-  "historicalAnalogues": [
+  "source_cards": [
     {
-      "event": string,
-      "year": number,
-      "structuralSimilarity": string,
-      "groundTruth": string,  // what actually happened
-      "relevantLesson": string
+      "platform": "twitter | telegram | web",
+      "handle": "string",
+      "snippet": "string",
+      "url": "string | null",
+      "informs_node_ids": ["string"]
     }
   ]
 }
 ```
 
-#### Node Expansion Prompt (Right-click "Expand Further")
-When the analyst right-clicks a node and selects expand, make a secondary API call with:
-- The full current scenario context
-- The specific node being expanded
-- An instruction to generate 3–5 deeper consequences from that specific node, going one level deeper than currently exists
-- Return the same node schema, with parentId set to the expanded node's id
-
-#### Stress Test Prompt
-When running a stress test:
-- Send the current scenario + the specific node + the analyst's "worse than expected" description
-- Ask Claude to identify which *other* nodes in the existing graph change in probability or magnitude, and what *new* nodes might appear
-- Return a diff: modified nodes (with delta explanation) and new nodes
-
-### API Call Management
-- All API calls should show a loading state with descriptive stage text
-- Primary generation call should use `max_tokens: 4000` — consequence graphs need space
-- Include error handling: if JSON parse fails, retry once with an explicit "return only valid JSON, no other text" instruction
-- Rate limit awareness: if multiple rapid calls are made, queue them
+### JSON Reliability
+1. Strip markdown fences if present
+2. Extract content between first `{` and last `}`
+3. If parse fails, retry once with explicit: "Return only raw JSON starting with { and ending with }. No other text."
+4. If retry fails, mark domain as errored, render other domains, show per-domain retry button
 
 ---
 
-## 6. PRE-SEEDED SCENARIO DATA
+## 8. FRONTEND ARCHITECTURE
 
-The scenario library must contain fully hardcoded, expert-quality consequence data for the pre-seeded scenarios. This data must be realistic and specific — not generic placeholders. It serves two purposes: instant loading without API dependency, and as a quality benchmark for what AI-generated scenarios should aspire to.
+### Layout: Three-Panel Dark Interface
 
-### Quality Bar for Pre-seeded Data
-
-Each pre-seeded scenario should have:
-- 15–25 consequence nodes across all 6 domains
-- 3–7 cross-domain edges
-- Quantitative estimates where known (e.g. Bab-el-Mandeb disruption typically adds $2–4/barrel risk premium; Hormuz closure in 1Q would spike European TTF gas 40–80%)
-- At least 2 historical analogues per scenario
-- Monitoring indicators that are specific and actionable (not "watch energy markets" but "watch Platts LNG NE Asia spot index, JKM futures curve, and Suezmax tanker day rates")
-
----
-
-## 7. DESIGN AND UX PRINCIPLES
+```
+┌─────────────────────────────────────────────────────────────────────────┐
+│  HEADER: Scenario title | Agent status | Cache timestamp | Export        │
+├──────────────┬─────────────────────────────────────────┬────────────────────┤
+│  LEFT PANEL  │        CENTRE PANEL                 │   RIGHT PANEL      │
+│  ~280px      │        Consequence Graph            │   ~340px           │
+│              │        D3 force-directed SVG        │                    │
+│  Trigger     │                                     │  [Tabs]            │
+│  Input       │        Domains stream in            │  Node Inspector    │
+│              │        as agents complete           │  Source Cards      │
+│  Timeline    │                                     │  Analogues         │
+│  Slider      │        Cross-domain edges +         │  Stress Test       │
+│              │        Analogues appear after       │                    │
+│  Domain      │        synthesiser completes        │  ──────────────    │
+│  Filters     │                                     │  Feedback Queue    │
+│              │                                     │  (pending items)   │
+│  Scenario    │                                     │                    │
+│  Library     │                                     │  [Submit Feedback] │
+└──────────────┴─────────────────────────────────────┴────────────────────┘
+```
 
 ### Visual Design
-- **Dark theme, mandatory.** This is a professional analytical tool, often used in low-light environments. Dark background (#0f1117 or similar), high contrast text, domain colours adjusted for dark theme legibility.
-- **Information density over whitespace.** The user is expert; they want data on screen, not breathing room.
-- **No decorative elements.** No gradients for aesthetics, no animations that don't convey data, no splash screens.
-- **Typography**: Monospace or technical sans-serif for data fields, clean readable font for descriptions.
+- **Dark theme mandatory.** Background `#0f1117`. High contrast text. Domain colours tuned for dark background.
+- **Information density over whitespace.** Expert user. Pack in data.
+- **No decorative elements.** No aesthetic animations. Motion only when it conveys data (timeline slider, streaming graph build).
+- Typography: technical sans-serif for UI chrome, monospace for data fields and estimates.
 
-### Interaction Principles
-- The timeline slider is the primary exploration mechanism — it must feel responsive and the graph transition must be smooth (nodes fade in/out rather than snapping)
-- Clicking a node should never navigate away or disrupt the graph — the right panel updates in place
-- The analyst should never feel "locked out" of the tool — if an API call fails, pre-seeded scenarios still work; if a node expansion fails, the existing graph is unaffected
-- Provide keyboard shortcuts for power users: `T` to toggle timeline, `D` to cycle domain filters, `R` to reset layout, `Escape` to deselect node
+### Left Panel
 
-### Loading States
-Loading must feel intelligent. Don't show a spinner with "Loading...". Show a sequence of descriptive status messages:
-1. "Parsing trigger event..."
-2. "Mapping primary energy dependencies..."
-3. "Analysing food/fertiliser supply chain exposure..."
-4. "Modelling sovereign fiscal vulnerabilities..."
-5. "Cross-referencing historical analogues..."
-6. "Building consequence graph..."
+**Trigger Input**: Large textarea. Placeholder: *"Describe a geopolitical trigger event..."*. Full-width Generate button below. During generation, button becomes a live status indicator cycling through agent pipeline stages with specific descriptions — not a generic spinner.
 
----
+**Timeline Slider**: Four positions — Immediate / Short / Medium / Long. Filters visible nodes to those at or before selected horizon. Nodes fade in/out on transition. Default: Short.
 
-## 8. KNOWN CHALLENGES AND WORKAROUNDS
+**Domain Filter Toggles**: Six coloured buttons, all on by default.
 
-### Challenge 1: D3 + React Integration Complexity
-D3 wants to own the DOM; React wants to own the DOM. This conflict is the #1 source of bugs in D3-in-React projects.
+**Scenario Library**: Collapsible. Lists saved scenarios from Supabase for this user. Clicking loads full scenario state — graph, feedback history, source cards, analogue associations. No hardcoded scenarios in frontend. The library is topic-agnostic by design: Gulf scenarios today, Taiwan Strait tomorrow, Sahel next month — same schema, same UI, no code changes required.
 
-**Workaround**: Use D3 exclusively for layout calculation (force simulation, position computation) but use React to render the actual SVG elements. D3 computes x,y positions; React renders `<circle>` and `<line>` elements from state. This is more code but avoids the double-DOM-ownership problem. Use `useRef` for the SVG container and `useEffect` for D3 simulation, but store node positions in React state.
+### Centre Panel — Consequence Graph
 
-### Challenge 2: JSON Reliability from Claude API
-LLMs sometimes return malformed JSON, add markdown fences, or include explanatory text before the JSON object.
+**D3 Force-Directed Graph**: Root trigger node at centre, larger, white, distinct. Six domain clusters at hexagonal centroid positions around root. Within-domain edges: solid lines. Cross-domain edges: dashed bezier curves, rendered below nodes, appearing only after synthesiser completes.
 
-**Workaround**: 
-- Use a robust JSON extraction function that strips markdown fences, finds the first `{` and last `}`, and parses what's between them
-- If parse fails, make one retry call with an explicit instruction: "Your previous response could not be parsed as JSON. Return only the raw JSON object with no other text, starting with { and ending with }"
-- If retry also fails, show an error state that preserves any partial data and offers the analyst the option to load the closest pre-seeded scenario instead
+**Node Visual Encoding**:
+- Colour = domain
+- Size = confidence (High > Medium > Speculative)
+- Opacity = timeline (Immediate 100% → Long 60%)
+- Border = confidence (solid / dashed / dotted)
+- ⚠ icon on speculative nodes
+- 📎 icon on nodes with source cards
 
-### Challenge 3: Graph Readability at High Node Counts
-A fully populated scenario with 20+ nodes will become visually cluttered.
+**Node Interactions**:
+- Hover: tooltip — title, domain, timeline, confidence
+- Click: populate right panel Node Inspector; activate focus mode (non-connected nodes dim to 20%)
+- Right-click context menu: Expand further / Disagree / Amplify / Find historical precedent / Remove
 
-**Workaround**:
-- Domain clustering: use D3 force simulation with a cluster force that pulls same-domain nodes toward domain "centroid" positions arranged in a fixed hexagonal layout around the root
-- Implement a "focus mode" — clicking a node dims all non-connected nodes to 20% opacity, highlighting only the selected node and its direct ancestors/descendants
-- The timeline slider is also a natural density management tool — at "Immediate" only 3–6 nodes show; the graph grows gradually as the analyst slides forward
+**Graph Controls**: Zoom (scroll), pan (drag background), Reset layout, Export PNG.
 
-### Challenge 4: Cross-Domain Edge Routing Legibility
-Cross-domain edges crossing the graph will tangle with within-domain edges.
+**Keyboard shortcuts**: `T` toggle timeline, `D` cycle domain filters, `R` reset layout, `Escape` deselect node.
 
-**Workaround**: Render cross-domain edges as curved bezier paths with a larger curvature radius, and in a visually distinct style (dashed, slightly thinner). This visually separates them from the domain-internal edges. Also render cross-domain edges in a layer *below* nodes but *above* within-domain edges.
+### Right Panel
 
-### Challenge 5: Stale Pre-seeded Data
-Hardcoded scenarios will gradually become outdated as geopolitical situations evolve.
+**Node Inspector Tab**: Domain badge, timeline badge, confidence badge. Mechanism. Key assumptions. Quantitative estimate. Monitoring indicators (highest-value field — what to watch to confirm the consequence is materialising). Historical precedent. "Add feedback" button.
 
-**Workaround**: Each pre-seeded scenario includes a `lastValidated` date field displayed to the analyst. Include a "Refresh with AI" button on pre-seeded scenarios that runs the current trigger through the API to generate a fresh version while keeping the pre-seeded version as a baseline for comparison.
+**Source Cards Tab**: All source cards grouped by node. Platform icon, handle, snippet, link. If no sources: informational note, not an error.
 
-### Challenge 6: Analyst Trust in AI-Generated Consequences
-An analyst may not trust AI-generated consequence nodes, especially speculative ones.
+**Analogues Tab**: 2–4 historical analogues for the current scenario. Event, year, structural similarity, ground truth, lesson. "Overlay on graph" button renders muted ghost of historical consequence pattern over current graph for visual comparison.
 
-**Workaround**: The confidence encoding (solid/dashed/dotted borders) is the primary trust signal. Additionally:
-- Every node's "mechanism" and "assumptions" fields are always visible in the inspector — the analyst can evaluate the reasoning, not just the conclusion
-- Include a "Challenge this node" interaction that prompts Claude to steelman *and* counter its own consequence assessment for that node
-- The historical analogues panel grounds AI reasoning in real events, making it easier to evaluate
+**Stress Test Tab**: Select a node. Describe worse-than-expected variant. "Run stress test" → targeted API call → returns modified nodes (with delta) and new nodes. Stress-tested nodes show red outline on graph.
+
+**Feedback Queue** (bottom of right panel, always visible): List of pending feedback items. Each shows: type badge, node reference, content preview, remove button. "Submit all feedback" triggers selective re-run. After completion, items show Applied state with timestamp.
 
 ---
 
-## 9. DATA SOURCES AND THEIR ROLES
+## 9. SCENARIO SEEDING
 
-The tool does not make live data API calls in its initial prototype form. However, the AI prompting should be informed by known structural facts, and the pre-seeded scenario data should reference real, specific data points. The following sources should inform the hardcoded data and AI system prompt:
+All scenario data lives in Supabase. Nothing is hardcoded in the frontend.
 
-- **UN Comtrade**: Bilateral trade flow data — which countries import what via which routes
-- **EIA**: US Energy Information Administration — LNG export terminal capacities, strategic reserve levels, shipping route dependency maps
-- **IEA**: Days of strategic petroleum reserve coverage by country
-- **FAO**: Food import dependency ratios, fertiliser trade flows, caloric vulnerability indices
-- **IMF World Economic Outlook**: Fiscal space indicators, current account deficits, countries most exposed to commodity import price shocks
-- **UNCTAD**: Chokepoint dependency analysis — which % of world trade transits each major strait
+On first deploy, a seed script populates:
 
-These sources inform the *quality* of pre-seeded data and AI prompting, but the tool does not make live calls to them in prototype. A future version could integrate live Comtrade API calls to give the AI current trade flow data as context.
+**`historical_analogues`**: Full analogue library as specified in Section 2, with all fields populated with expert-quality content.
+
+**Initial scenario seeds**: A set of Gulf/MENA scenarios in the `scenarios`, `nodes`, `edges`, and `source_cards` tables representing expert-quality first-pass analysis. These are not placeholders — each must include quantitative estimates, specific monitoring indicators, and realistic source card references. Seeded scenarios:
+
+- Strait of Hormuz partial disruption (mining/harassment)
+- Strait of Hormuz full closure (military action)
+- Red Sea sustained Houthi escalation
+- Qatar renewed GCC blockade
+- Saudi Arabia internal political instability
+- Iran nuclear threshold crossing
+- UAE targeted infrastructure attack
+
+The scenario schema is intentionally topic-agnostic. Future domains (Taiwan Strait, South China Sea, Sahel) are added via database seeding only — no code changes required.
 
 ---
 
-## 10. FUTURE CAPABILITIES (OUT OF SCOPE FOR PROTOTYPE, BUT DESIGN FOR)
+## 10. KNOWN CHALLENGES AND WORKAROUNDS
 
-The architecture should not preclude these future additions, even though they are not built in V1:
+### D3 + React DOM Conflict
+D3 and React both want to own the DOM.
 
-1. **Live data integration**: Perplexity API calls to enrich AI context with current news before generating consequences
-2. **Collaborative annotations**: Multiple analysts adding comments/disagreements to specific nodes
-3. **Scenario comparison mode**: Two consequence graphs side by side (e.g. "partial disruption" vs "full closure")
-4. **Alert triggers**: Analyst defines a consequence node they're watching; tool monitors for monitoring indicator signals
-5. **Export to structured report**: One-click export of the consequence graph as a formatted PDF briefing
-6. **Custom domain schemas**: Analysts add their own domain categories relevant to their specific focus area
+**Workaround**: D3 computes positions only. React renders all SVG elements from state. D3 never touches the DOM. Use `useRef` for SVG container, `useEffect` for simulation, store positions in React state updated via simulation tick callbacks.
+
+### Graph Readability at Scale
+20+ nodes creates visual clutter.
+
+**Workaround**: Domain clustering with hexagonal centroid layout. Focus mode (click node → dim non-connected to 20%). Timeline slider as natural density tool — analyst slides forward to grow the graph progressively.
+
+### Cross-Domain Edge Tangling
+Cross-domain edges cross the centre of the graph.
+
+**Workaround**: High-curvature bezier paths for cross-domain edges. Rendered in a dedicated SVG layer below nodes but above within-domain edges. Dashed style distinguishes them visually.
+
+### Perplexity Cache Staleness
+Session cache may go stale during a fast-moving situation.
+
+**Workaround**: Display cache timestamp in header next to "Refresh context" button. Analyst decides when to invalidate. Scenario tweaks do not auto-refresh.
+
+### Synthesiser Cannot Run Until All Agents Complete
+**Workaround**: This is by design, not a limitation. Stream domain outputs immediately as agents complete. Render "synthesis in progress" state on cross-domain edges and Analogues tab. Second visual wave when synthesiser finishes. Analyst is reading useful content throughout.
+
+### Feedback Re-run Scope Determination
+Mixed feedback batches (disagree on energy node + inject into military) require correct scope inference.
+
+**Workaround**: Feedback items carry `domain_tag` (inferred from node's domain at creation). Orchestrator unions all affected domains from the batch. If scope is ambiguous, default to broader re-run rather than narrower — coherence is worth the latency.
 
 ---
 
 ## 11. SUCCESS CRITERIA
 
-The prototype is successful when:
-
-1. An analyst can input a Gulf-region geopolitical trigger event and receive a populated, visually coherent consequence graph in under 60 seconds
-2. The timeline slider meaningfully changes what nodes are visible and the graph transition is smooth
-3. Clicking any node reveals a detailed, credible consequence assessment in the right panel with specific monitoring indicators
-4. At least one pre-seeded scenario is fully populated with expert-quality data and loads instantly
-5. The historical analogues panel shows relevant real events with genuine comparative insight
-6. The tool runs entirely in the browser with no backend dependency beyond the Anthropic API
-7. A knowledgeable analyst looking at the tool for the first time, without instruction, can understand how to use it within 30 seconds
+1. Analyst inputs a trigger event and receives a streaming consequence graph within 60 seconds, domains appearing as agents complete
+2. Timeline slider meaningfully filters nodes with smooth transitions
+3. Source cards appear for OSINT-informed nodes, with handles and links the analyst can follow independently
+4. Analyst can batch feedback across multiple nodes, submit once, and see only the affected subgraph update
+5. Scenario tweak triggers full swarm re-run with Perplexity cache preserved
+6. Historical analogues surface per scenario and can be overlaid on the graph
+7. Any single agent or service failure degrades gracefully — partial graph visible, failed component retryable, no blank screens
+8. All scenario data, feedback, and source cards persist to Supabase and are fully recoverable across sessions
+9. No API keys appear anywhere in the codebase
+10. A knowledgeable analyst understands how to use the tool within 30 seconds without instruction
 
 ---
 
-## 12. TONE AND VOICE THROUGHOUT THE TOOL
+## 12. TONE AND VOICE
 
-Every piece of text in the tool — labels, tooltips, placeholder text, error messages, loading states — should reflect that this is a tool for experts. No hedging language like "AI may make mistakes." No oversimplification. Write as a fellow analyst would write: direct, specific, technically precise.
+Every piece of text in the tool — labels, tooltips, placeholders, error messages, loading states — reflects that this is a tool for experts. No hedging. No oversimplification. Direct, specific, technically precise.
 
-The tool's personality, if it has one, is a highly competent analyst colleague who has done the first pass of consequence mapping so you can spend your time interrogating, challenging, and extending their work rather than doing the initial scaffolding from scratch.
+The tool's role is a highly capable analyst who has done the first-pass consequence mapping so the human can spend their time interrogating, challenging, and extending it. The AI produces the draft. The analyst is the editor.
 
 ---
 
