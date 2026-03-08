@@ -1,0 +1,4 @@
+# Allow OPTIONS preflight (no JWT sent by browser) to reach the function so CORS works.
+# POST from the app still sends anon key; this only lets the preflight through.
+[functions.generate-consequences]
+verify_jwt = false
