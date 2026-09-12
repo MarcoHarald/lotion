@@ -1,3 +1,46 @@
+# Lotion — Geopolitical Consequence Mapping Tool
+
+A scenario reasoning engine for analysts tracking second- and third-order effects of geopolitical events.
+
+This is **not** a news aggregator and **not** a dashboard. You describe a trigger in plain language; an agent swarm drafts a consequence graph across energy, food, finance, political stability, military posture, and supply chain; you inspect, challenge, and steer that draft.
+
+## How it works
+
+1. **Enter a trigger** in the left panel and generate. Domain agents fill a force-directed graph in the centre. Colour is domain, size is confidence, dashed curves are cross-domain links.
+2. **Click a node** to open the inspector: mechanism, assumptions, quantitative estimate, and monitoring indicators (what to watch to confirm the effect is materialising).
+3. **Ground the draft** with historical analogues and source cards, then queue Disagree / Amplify / Scenario tweak / External inject feedback for a selective re-run.
+
+![Three-panel workspace: trigger input, Hormuz consequence graph, and node inspector for a spot LNG price surge](docs/screenshots/workspace_graph.png)
+
+*Example scenario: Iran begins a mining campaign in the Strait of Hormuz. The selected energy node estimates a 15–25% JKM spike.*
+
+![Analogues tab linking the Hormuz scenario to 2012 Hormuz threats and the 2021–2022 Red Sea campaign](docs/screenshots/analogues.png)
+
+*Analogues tab — events linked to this scenario, plus the analogue library (1973 embargo, 1990 Gulf War, …).*
+
+![Source cards tab with Lloyd’s List, Perplexity, and USNI News citations on Hormuz nodes](docs/screenshots/source_cards.png)
+
+*Source cards — cited leads attached to nodes, not silently absorbed into the graph.*
+
+**Run the UI locally**
+
+```bash
+npm install
+npm run dev
+```
+
+Open http://localhost:5173/. To preview the Hormuz example without API keys:
+
+```bash
+VITE_DEMO_MODE=true npm run dev
+```
+
+Live generation (Claude + optional Perplexity) needs a Supabase project — see [SETUP.md](SETUP.md). Refresh the screenshots after UI changes with `npm run screenshots`.
+
+---
+
+The remainder of this document is the original agent build brief (architecture, schema, prompts, success criteria).
+
 # AGENT BUILD BRIEF: Geopolitical Consequence Mapping Tool
 ### *A scenario reasoning engine for analysts tracking second and third-order effects of geopolitical events*
 

@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import * as d3 from "d3";
 import type { Node, Edge } from "./supabase";
 
@@ -12,7 +12,17 @@ const DOMAIN_COLORS: Record<string, string> = {
   supply_chain: "#a855f7",
 };
 
-type NodeWithPos = Node & { x?: number; y?: number; vx?: number; vy?: number };
+/** Hex ring around the root, matching the spec’s domain clustering. */
+const DOMAIN_ANGLES: Record<string, number> = {
+  energy: -Math.PI / 2,
+  food: -Math.PI / 2 + Math.PI / 3,
+  finance: -Math.PI / 2 + (2 * Math.PI) / 3,
+  political: Math.PI / 2,
+  military: Math.PI / 2 + Math.PI / 3,
+  supply_chain: Math.PI / 2 + (2 * Math.PI) / 3,
+};
+
+type NodeWithPos = Node & { x?: number; y?: number; vx?: number; vy?: number; fx?: number | null; fy?: number | null };
 
 type Props = {
   nodes: Node[];
@@ -25,22 +35,53 @@ type Props = {
 export function Graph({ nodes, edges, selectedNodeId, onSelectNode, scenarioId }: Props) {
   const svgRef = useRef<SVGSVGElement>(null);
   const [positions, setPositions] = useState<Record<string, { x: number; y: number }>>({});
-  const simulationRef = useRef<d3.Simulation<NodeWithPos, Edge> | null>(null);
 
   const safeNodes = Array.isArray(nodes) ? nodes.filter((n) => n && typeof n.id === "string") : [];
-  const safeEdges = Array.isArray(edges) ? edges.filter((e) => e && typeof e.source_node_id === "string" && typeof e.target_node_id === "string") : [];
+  const safeEdges = Array.isArray(edges)
+    ? edges.filter((e) => e && typeof e.source_node_id === "string" && typeof e.target_node_id === "string")
+    : [];
+
+  const layoutKey = useMemo(
+    () =>
+      `${scenarioId ?? ""}|${safeNodes.map((n) => n.id).join(",")}|${safeEdges.map((e) => e.id).join(",")}`,
+    [scenarioId, nodes, edges]
+  );
 
   useEffect(() => {
-    if (!safeNodes.length || !svgRef.current) return;
+    const svg = svgRef.current;
+    if (!safeNodes.length || !svg) return;
 
-    const width = svgRef.current.clientWidth || 800;
-    const height = svgRef.current.clientHeight || 600;
+    const width = svg.clientWidth || 800;
+    const height = svg.clientHeight || 600;
     const centerX = width / 2;
     const centerY = height / 2;
+    const ring = Math.min(width, height) * 0.34;
 
-    const nodesForSim: NodeWithPos[] = safeNodes.map((n) => ({ ...n }));
-    const links: { source: string; target: string; id: string }[] = safeEdges
-      .filter((e) => nodesForSim.some((n) => n.id === e.source_node_id) && nodesForSim.some((n) => n.id === e.target_node_id))
+    const targetFor = (n: Node) => {
+      if (n.domain === "root" || n.parent_id === null) return { x: centerX, y: centerY };
+      const angle = DOMAIN_ANGLES[n.domain] ?? 0;
+      return { x: centerX + Math.cos(angle) * ring, y: centerY + Math.sin(angle) * ring };
+    };
+
+    const nodesForSim: NodeWithPos[] = safeNodes.map((n) => {
+      const t = targetFor(n);
+      const pinned = n.domain === "root" || n.parent_id === null;
+      return {
+        ...n,
+        x: t.x,
+        y: t.y,
+        fx: pinned ? centerX : undefined,
+        fy: pinned ? centerY : undefined,
+      };
+    });
+
+    type SimLink = { source: string; target: string; id: string };
+    const links: SimLink[] = safeEdges
+      .filter(
+        (e) =>
+          nodesForSim.some((n) => n.id === e.source_node_id) &&
+          nodesForSim.some((n) => n.id === e.target_node_id)
+      )
       .map((e) => ({ source: e.source_node_id, target: e.target_node_id, id: e.id }));
 
     const sim = d3
@@ -48,40 +89,37 @@ export function Graph({ nodes, edges, selectedNodeId, onSelectNode, scenarioId }
       .force(
         "link",
         d3
-          .forceLink<NodeWithPos, { source: string; target: string }>(links)
-          .id((d) => (d as NodeWithPos).id)
-          .distance(80)
+          .forceLink<NodeWithPos, SimLink>(links)
+          .id((d) => d.id)
+          .distance(90)
+          .strength(0.4)
       )
-      .force("charge", d3.forceManyBody().strength(-200))
-      .force("center", d3.forceCenter(centerX, centerY))
-      .force("x", d3.forceX(centerX).strength(0.05))
-      .force("y", d3.forceY(centerY).strength(0.05));
+      .force("charge", d3.forceManyBody().strength(-280))
+      .force(
+        "x",
+        d3.forceX<NodeWithPos>((d) => targetFor(d).x).strength((d) => (d.domain === "root" ? 1 : 0.55))
+      )
+      .force(
+        "y",
+        d3.forceY<NodeWithPos>((d) => targetFor(d).y).strength((d) => (d.domain === "root" ? 1 : 0.55))
+      )
+      .force("collide", d3.forceCollide<NodeWithPos>(() => 36).iterations(2))
+      .stop();
 
-    const root = nodesForSim.find((n) => n.domain === "root" || n.parent_id === null);
-    if (root) {
-      const rootNode = nodesForSim.find((n) => n.id === root.id);
-      if (rootNode) {
-        rootNode.x = centerX;
-        rootNode.y = centerY;
-        sim.force("x", d3.forceX(centerX).strength((d) => (d.id === root.id ? 0.3 : 0.02)));
-        sim.force("y", d3.forceY(centerY).strength((d) => (d.id === root.id ? 0.3 : 0.02)));
-      }
-    }
+    sim.tick(220);
 
-    simulationRef.current = sim;
-    sim.on("tick", () => {
-      const pos: Record<string, { x: number; y: number }> = {};
-      nodesForSim.forEach((n) => {
-        if (n.x != null && n.y != null) pos[n.id] = { x: n.x, y: n.y };
-      });
-      setPositions((p) => (Object.keys(pos).length ? pos : p));
+    const pos: Record<string, { x: number; y: number }> = {};
+    nodesForSim.forEach((n) => {
+      if (n.x != null && n.y != null) pos[n.id] = { x: n.x, y: n.y };
     });
+    setPositions(pos);
 
     return () => {
       sim.stop();
-      simulationRef.current = null;
     };
-  }, [safeNodes, safeEdges, scenarioId]);
+    // safeNodes/safeEdges are new arrays each render; layoutKey is the identity of the graph.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [layoutKey]);
 
   if (!scenarioId && safeNodes.length === 0) {
     return (
@@ -99,15 +137,27 @@ export function Graph({ nodes, edges, selectedNodeId, onSelectNode, scenarioId }
 
   return (
     <div className="flex-1 min-h-0 relative">
-      <svg
-        ref={svgRef}
-        className="w-full h-full cursor-grab active:cursor-grabbing"
-        onMouseLeave={() => onSelectNode(null)}
-      >
+      <svg ref={svgRef} className="w-full h-full cursor-grab active:cursor-grabbing">
         <g>
           {safeEdges.map((e) => {
             const src = getNodePos(e.source_node_id);
             const tgt = getNodePos(e.target_node_id);
+            if (e.is_cross_domain) {
+              const mx = (src.x + tgt.x) / 2;
+              const my = (src.y + tgt.y) / 2;
+              const cx = mx - (tgt.y - src.y) * 0.18;
+              const cy = my + (tgt.x - src.x) * 0.18;
+              return (
+                <path
+                  key={e.id}
+                  d={`M ${src.x} ${src.y} Q ${cx} ${cy} ${tgt.x} ${tgt.y}`}
+                  fill="none"
+                  stroke="#4b5563"
+                  strokeWidth={1}
+                  strokeDasharray="4 2"
+                />
+              );
+            }
             return (
               <line
                 key={e.id}
@@ -115,9 +165,8 @@ export function Graph({ nodes, edges, selectedNodeId, onSelectNode, scenarioId }
                 y1={src.y}
                 x2={tgt.x}
                 y2={tgt.y}
-                stroke={e.is_cross_domain ? "#4b5563" : "#374151"}
-                strokeWidth={e.is_cross_domain ? 1 : 1.5}
-                strokeDasharray={e.is_cross_domain ? "4 2" : undefined}
+                stroke="#374151"
+                strokeWidth={1.5}
               />
             );
           })}
@@ -129,6 +178,7 @@ export function Graph({ nodes, edges, selectedNodeId, onSelectNode, scenarioId }
             const opacity = node.timeline === "immediate" ? 1 : node.timeline === "long" ? 0.65 : 0.85;
             const selected = node.id === selectedNodeId;
             const color = DOMAIN_COLORS[node.domain] ?? "#9ca3af";
+            const label = node.title.length > 22 ? `${node.title.slice(0, 20)}…` : node.title;
             return (
               <g
                 key={node.id}
@@ -143,6 +193,16 @@ export function Graph({ nodes, edges, selectedNodeId, onSelectNode, scenarioId }
                   stroke={selected ? "#fff" : "rgba(255,255,255,0.3)"}
                   strokeWidth={selected ? 2.5 : 1}
                 />
+                <text
+                  y={r + 12}
+                  textAnchor="middle"
+                  fill={selected ? "#f3f4f6" : "#9ca3af"}
+                  fontSize={selected ? 11 : 9}
+                  fontWeight={selected ? 600 : 400}
+                  style={{ pointerEvents: "none", userSelect: "none" }}
+                >
+                  {label}
+                </text>
                 <title>{`${node.title} (${node.domain}) — ${node.timeline}, ${node.confidence}`}</title>
               </g>
             );

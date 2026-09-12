@@ -12,6 +12,18 @@ import {
 import { LeftPanel } from "./LeftPanel";
 import { Graph } from "./Graph";
 import { RightPanel } from "./RightPanel";
+import {
+  demoEdges,
+  demoFeedback,
+  demoHistoricalAnalogues,
+  demoNodes,
+  demoScenario,
+  demoScenarioAnalogues,
+  demoSelectedNodeId,
+  demoSourceCards,
+  demoTriggerText,
+  isDemoMode,
+} from "./demoScenario";
 
 const TIMELINE_ORDER = ["immediate", "short", "medium", "long"] as const;
 const DOMAINS = ["energy", "food", "finance", "political", "military", "supply_chain"] as const;
@@ -21,17 +33,21 @@ type ScenarioAnalogueWithAnalogue = ScenarioAnalogue & {
 };
 
 export default function App() {
-  const [triggerText, setTriggerText] = useState("");
-  const [scenarios, setScenarios] = useState<Scenario[]>([]);
-  const [scenarioId, setScenarioId] = useState<string | null>(null);
-  const [nodes, setNodes] = useState<Node[]>([]);
-  const [edges, setEdges] = useState<Edge[]>([]);
-  const [sourceCards, setSourceCards] = useState<SourceCard[]>([]);
-  const [analystFeedback, setAnalystFeedback] = useState<AnalystFeedback[]>([]);
-  const [scenarioAnalogues, setScenarioAnalogues] = useState<ScenarioAnalogueWithAnalogue[]>([]);
-  const [historicalAnalogues, setHistoricalAnalogues] = useState<HistoricalAnalogue[]>([]);
-  const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
-  const [timelineIndex, setTimelineIndex] = useState(1); // default Short
+  const [triggerText, setTriggerText] = useState(isDemoMode ? demoTriggerText : "");
+  const [scenarios, setScenarios] = useState<Scenario[]>(isDemoMode ? [demoScenario] : []);
+  const [scenarioId, setScenarioId] = useState<string | null>(isDemoMode ? demoScenario.id : null);
+  const [nodes, setNodes] = useState<Node[]>(isDemoMode ? demoNodes : []);
+  const [edges, setEdges] = useState<Edge[]>(isDemoMode ? demoEdges : []);
+  const [sourceCards, setSourceCards] = useState<SourceCard[]>(isDemoMode ? demoSourceCards : []);
+  const [analystFeedback, setAnalystFeedback] = useState<AnalystFeedback[]>(isDemoMode ? demoFeedback : []);
+  const [scenarioAnalogues, setScenarioAnalogues] = useState<ScenarioAnalogueWithAnalogue[]>(
+    isDemoMode ? demoScenarioAnalogues : []
+  );
+  const [historicalAnalogues, setHistoricalAnalogues] = useState<HistoricalAnalogue[]>(
+    isDemoMode ? demoHistoricalAnalogues : []
+  );
+  const [selectedNodeId, setSelectedNodeId] = useState<string | null>(isDemoMode ? demoSelectedNodeId : null);
+  const [timelineIndex, setTimelineIndex] = useState(isDemoMode ? 3 : 1);
   const [domainFilters, setDomainFilters] = useState<Record<string, boolean>>(
     Object.fromEntries(DOMAINS.map((d) => [d, true]))
   );
@@ -41,6 +57,10 @@ export default function App() {
   const [perplexityPreview, setPerplexityPreview] = useState<string | null>(null);
 
   const loadScenarios = useCallback(async () => {
+    if (isDemoMode) {
+      setScenarios([demoScenario]);
+      return;
+    }
     const { data, error: e } = await supabase
       .from("scenarios")
       .select("id, user_id, title, trigger_text, trigger_summary, status, generation_stage, perplexity_cache, perplexity_cached_at, created_at, updated_at")
@@ -54,6 +74,17 @@ export default function App() {
   }, []);
 
   const loadScenario = useCallback(async (id: string) => {
+    if (isDemoMode) {
+      setScenarioId(demoScenario.id);
+      setSelectedNodeId(demoSelectedNodeId);
+      setNodes(demoNodes);
+      setEdges(demoEdges);
+      setSourceCards(demoSourceCards);
+      setAnalystFeedback(demoFeedback);
+      setScenarioAnalogues(demoScenarioAnalogues);
+      setError(null);
+      return;
+    }
     setScenarioId(id);
     setSelectedNodeId(null);
     setError(null);
@@ -103,6 +134,10 @@ export default function App() {
   }, [loadScenarios]);
 
   const loadHistoricalAnalogues = useCallback(async () => {
+    if (isDemoMode) {
+      setHistoricalAnalogues(demoHistoricalAnalogues);
+      return;
+    }
     const { data } = await supabase.from("historical_analogues").select("*").order("year", { ascending: false });
     setHistoricalAnalogues(Array.isArray(data) ? (data as HistoricalAnalogue[]) : []);
   }, []);
@@ -126,6 +161,10 @@ export default function App() {
 
   const handleGenerate = useCallback(async () => {
     if (!triggerText.trim()) return;
+    if (isDemoMode) {
+      setError("Demo mode is read-only. Set up Supabase (see SETUP.md) to generate a live scenario.");
+      return;
+    }
     setLoading(true);
     setError(null);
     setPerplexityPreview(null);
@@ -218,21 +257,17 @@ export default function App() {
     ? (nodeList.find((n) => n && n.id === selectedNodeId) ?? null)
     : null;
 
-  const stageMessage =
-    statusMessage ??
-    (isGenerating && currentScenario?.generation_stage
-      ? currentScenario.generation_stage === "perplexity" || currentScenario.generation_stage === "perplexity_done"
-        ? "Context ready."
-        : currentScenario.generation_stage === "domains_batch_1_done"
-          ? "Domain analysis 1/2 done."
-          : currentScenario.generation_stage === "domains_batch_2_done"
-            ? "Domain analysis 2/2 done."
-            : currentScenario.generation_stage === "domains"
-              ? "Running domain agents…"
-              : currentScenario.generation_stage === "synthesis"
-                ? "Synthesising…"
-                : "Generating…")
-      : null;
+  const stageFromGeneration = (() => {
+    if (!isGenerating || !currentScenario?.generation_stage) return null;
+    const stage = currentScenario.generation_stage;
+    if (stage === "perplexity" || stage === "perplexity_done") return "Context ready.";
+    if (stage === "domains_batch_1_done") return "Domain analysis 1/2 done.";
+    if (stage === "domains_batch_2_done") return "Domain analysis 2/2 done.";
+    if (stage === "domains") return "Running domain agents…";
+    if (stage === "synthesis") return "Synthesising…";
+    return "Generating…";
+  })();
+  const stageMessage = statusMessage ?? stageFromGeneration;
 
   const cacheTime = currentScenario?.perplexity_cached_at
     ? new Date(currentScenario.perplexity_cached_at).toLocaleString(undefined, {
